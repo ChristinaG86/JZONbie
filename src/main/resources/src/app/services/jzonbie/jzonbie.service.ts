@@ -20,14 +20,15 @@ export class JZONbieService {
     }
 
     getHistory(): PrimingRequest[] {
-        let headers: Headers = new Headers({
-            "Accept": "application/json",
-            "zombie": "reset"
-        });
-        return this.http.get("/", {
-            headers: headers
-        }).toPromise()
-            .then(response => response.json() as PrimingRequest[]);
+        // let headers: Headers = new Headers({
+        //     "Accept": "application/json",
+        //     "zombie": "reset"
+        // });
+        // return this.http.get("/", {
+        //     headers: headers
+        // }).toPromise()
+        //     .then(response => response.json() as PrimingRequest[]);
+        return null;
     }
 
     reset() {

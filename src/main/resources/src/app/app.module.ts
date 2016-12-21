@@ -8,6 +8,8 @@ import {AppRoutingModule} from "./app-routing.module";
 import {PrimingComponent} from "./components/priming/priming.component";
 import {CurrentPrimingComponent} from "./components/current-priming/current-priming.component";
 import {HistoryComponent} from "./components/history/history.component";
+import {JZONbieService} from "./services/jzonbie/jzonbie.service";
+import {RequestFactory} from "./services/jzonbie/request-factory.service";
 
 @NgModule({
     declarations: [
@@ -22,7 +24,10 @@ import {HistoryComponent} from "./components/history/history.component";
         FormsModule,
         HttpModule
     ],
-    providers: [],
+    providers: [
+        JZONbieService,
+        RequestFactory
+    ],
     bootstrap: [AppComponent]
 })
 export class AppModule {

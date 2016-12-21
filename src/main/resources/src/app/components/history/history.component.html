@@ -1,3 +1,15 @@
-<div>
-    <p>This is where history will go</p>
+<div class="history-container">
+    <div *ngFor="let primingRequest of history">
+        <div class="zombie-request">
+            <span>{{primingRequest.request.path}}</span>
+            <span>{{primingRequest.request.method}}</span>
+            <span>{{primingRequest.request.headers | json}}</span>
+            <span *ngIf="primingRequest.request.body">{{primingRequest.request.body | json}}</span>
+        </div>
+        <div class="zombie-response">
+            <span>{{primingRequest.response.statusCode}}</span>
+            <span>{{primingRequest.response.headers | json}}</span>
+            <span>{{primingRequest.response.body | json}}</span>
+        </div>
+    </div>
 </div>
