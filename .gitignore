@@ -3,3 +3,5 @@
 build
 *.iml
 out
+node_modules
+dist

@@ -66,7 +66,6 @@ public class DefaultingQueueDeserializer extends StdDeserializer<DefaultingQueue
         return builder.build();
     }
 
-    // TODO: Handle null here
     private BodyContent getBodyContent(JsonNode bodyNode) {
         final Object object = convertJsonNodeToObject(bodyNode);
         if(object == null) return null;
