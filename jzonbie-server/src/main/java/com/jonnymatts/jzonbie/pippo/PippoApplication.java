@@ -1,8 +1,11 @@
 package com.jonnymatts.jzonbie.pippo;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.jknack.handlebars.Handlebars;
+import com.github.jknack.handlebars.Template;
 import com.google.common.base.Stopwatch;
 import com.jonnymatts.jzonbie.JzonbieOptions;
+import com.jonnymatts.jzonbie.model.TemplatedAppResponse;
 import com.jonnymatts.jzonbie.model.content.BodyContent;
 import com.jonnymatts.jzonbie.model.content.LiteralBodyContent;
 import com.jonnymatts.jzonbie.requests.AppRequestHandler;
@@ -13,12 +16,15 @@ import com.jonnymatts.jzonbie.response.CurrentPrimingFileResponseFactory.FileRes
 import com.jonnymatts.jzonbie.response.ErrorResponse;
 import com.jonnymatts.jzonbie.response.PrimingNotFoundErrorResponse;
 import com.jonnymatts.jzonbie.response.Response;
+import com.jonnymatts.jzonbie.templating.JsonPathHelper;
+import com.jonnymatts.jzonbie.templating.TransformationContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ro.pippo.core.Application;
 import ro.pippo.core.route.RouteContext;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
@@ -89,10 +95,17 @@ public class PippoApplication extends Application {
                 if(body == null) {
                     routeContext.getResponse().commit();
                 } else if(body instanceof LiteralBodyContent) {
-                    routeContext.send(((LiteralBodyContent) body).getContent());
+                    final String transformedBody = transformResponseBody(pippoRequest, ((LiteralBodyContent) body).getContent());
+                    routeContext.send(transformedBody);
                 } else {
                     final Object o = (body instanceof BodyContent) ? ((BodyContent) body).getContent() : body;
-                    routeContext.send(objectMapper.writeValueAsString(o));
+                    final String bodyString = objectMapper.writeValueAsString(o);
+                    if(response instanceof TemplatedAppResponse) {
+                        final String transformedBodyString = transformResponseBody(pippoRequest, bodyString);
+                        routeContext.send(transformedBodyString);
+                    } else {
+                        routeContext.send(bodyString);
+                    }
                 }
             }
         } catch (PrimingNotFoundException e) {
@@ -105,6 +118,14 @@ public class PippoApplication extends Application {
             stopwatch.stop();
             LOGGER.debug("Handled request {} in {} ms", pippoRequest, stopwatch.elapsed(MILLISECONDS));
         }
+    }
+
+    private String transformResponseBody(PippoRequest pippoRequest, String bodyString) throws IOException {
+        final TransformationContext transformationContext = new TransformationContext(pippoRequest);
+        final Handlebars handlebars = new Handlebars();
+        handlebars.registerHelper("jsonPath", new JsonPathHelper());
+        final Template template = handlebars.compileInline(bodyString);
+        return template.apply(transformationContext);
     }
 
     private void primeResponse(ro.pippo.core.Response response, Response r) {

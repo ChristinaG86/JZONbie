@@ -34,7 +34,9 @@ import java.util.Map;
 import static com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL;
 import static com.fasterxml.jackson.databind.SerializationFeature.INDENT_OUTPUT;
 import static com.jonnymatts.jzonbie.model.AppResponse.*;
+import static com.jonnymatts.jzonbie.model.TemplatedAppResponse.templated;
 import static com.jonnymatts.jzonbie.model.content.ArrayBodyContent.arrayBody;
+import static com.jonnymatts.jzonbie.model.content.LiteralBodyContent.literalBody;
 import static com.jonnymatts.jzonbie.model.content.StringBodyContent.stringBody;
 import static com.jonnymatts.jzonbie.response.DefaultAppResponse.StaticDefaultAppResponse.staticDefault;
 import static java.time.temporal.ChronoUnit.SECONDS;
@@ -383,5 +385,58 @@ public class PippoApplicationTest extends PippoTest {
 
         pippoResponse.then().assertThat()
                 .statusCode(200);
+    }
+
+    @Test
+    public void testTemplatedPriming() throws Exception {
+        final AppResponse appResponse = AppResponse.ok().withBody(literalBody("{{ request.path }}")).build();
+        zombiePriming.setAppResponse(appResponse);
+
+        final Response pippoResponse = given()
+                .header("zombie", "priming-template")
+                .contentType(ContentType.JSON)
+                .body(objectMapper.writeValueAsString(zombiePriming))
+                .post("/");
+        pippoResponse.then().statusCode(201);
+        pippoResponse.then().contentType(ContentType.JSON);
+        pippoResponse.then().body("request.path", equalTo(appRequest.getPath()));
+        pippoResponse.then().body("response.statusCode", CoreMatchers.equalTo(appResponse.getStatusCode()));
+
+        final List<PrimedMapping> currentPriming = primingContext.getCurrentPriming();
+        assertThat(currentPriming).hasSize(1);
+        assertThat(currentPriming.get(0).getAppResponses().getEntries().get(0)).isInstanceOf(TemplatedAppResponse.class);
+    }
+
+    @Test
+    public void testTemplatedDefaultPriming() throws Exception {
+        final AppResponse appResponse = AppResponse.ok().withBody(literalBody("{{ request.path }}")).build();
+        zombiePriming.setAppResponse(appResponse);
+
+        final Response pippoResponse = given()
+                .header("zombie", "priming-default-template")
+                .contentType(ContentType.JSON)
+                .body(objectMapper.writeValueAsString(zombiePriming))
+                .post("/");
+        pippoResponse.then().statusCode(201);
+        pippoResponse.then().contentType(ContentType.JSON);
+        pippoResponse.then().body("request.path", equalTo(appRequest.getPath()));
+        pippoResponse.then().body("response.statusCode", CoreMatchers.equalTo(appResponse.getStatusCode()));
+
+        final List<PrimedMapping> currentPriming = primingContext.getCurrentPriming();
+        assertThat(currentPriming).hasSize(1);
+        assertThat(currentPriming.get(0).getAppResponses().getDefault().get().getResponse()).isInstanceOf(TemplatedAppResponse.class);
+    }
+
+    @Test
+    public void testAppRequestWithTemplatedPriming() throws Exception {
+        final AppRequest request = AppRequest.get("/path").build();
+        final TemplatedAppResponse response = templated(ok().withBody(literalBody("{\"path\": \"{{ request.path }}\"}")).build());
+
+        primingContext.add(request, response);
+
+        final Response pippoResponse = given()
+                .get("/path");
+
+        pippoResponse.then().body(equalTo("{\"path\": \"/path\"}"));
     }
 }
