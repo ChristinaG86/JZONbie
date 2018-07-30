@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.github.jknack.handlebars.Handlebars;
 import com.google.common.base.Stopwatch;
 import com.jayway.restassured.http.ContentType;
 import com.jayway.restassured.response.Response;
@@ -64,13 +65,14 @@ public class PippoApplicationTest extends PippoTest {
     private static final AppRequestHandler appRequestHandler = new AppRequestHandler(primingContext, callHistory, failedRequests, new AppRequestFactory(deserializer));
     private static final PrimedMappingUploader primedMappingUploader = new PrimedMappingUploader(primingContext);
     private static final ZombieRequestHandler zombieRequestHandler = new ZombieRequestHandler(JzonbieOptions.options(), primingContext, callHistory, failedRequests, deserializer, new CurrentPrimingFileResponseFactory(objectMapper), primedMappingUploader);
+    private static final Handlebars handlebars = new Handlebars();
 
     private AppRequest appRequest;
     private AppResponse appResponse;
     private ZombiePriming zombiePriming;
 
     @ClassRule
-    public static PippoRule pippoRule = new PippoRule(new PippoApplication(JzonbieOptions.options(), appRequestHandler, zombieRequestHandler, objectMapper, singletonList(JzonbieRoute.get("/ready", c -> c.getRouteContext().getResponse().ok()))));
+    public static PippoRule pippoRule = new PippoRule(new PippoApplication(JzonbieOptions.options(), appRequestHandler, zombieRequestHandler, objectMapper, singletonList(JzonbieRoute.get("/ready", c -> c.getRouteContext().getResponse().ok())), handlebars));
 
 
     @Before
@@ -430,13 +432,19 @@ public class PippoApplicationTest extends PippoTest {
     @Test
     public void testAppRequestWithTemplatedPriming() throws Exception {
         final AppRequest request = AppRequest.get("/path").build();
-        final TemplatedAppResponse response = templated(ok().withBody(literalBody("{\"path\": \"{{ request.path }}\"}")).build());
+        final TemplatedAppResponse response = templated(
+                ok().withHeader("method", "{{ request.method }}")
+                        .withBody(literalBody("{\"path\": \"{{ request.path }}\"}"))
+                        .build()
+        );
 
         primingContext.add(request, response);
 
         final Response pippoResponse = given()
                 .get("/path");
 
-        pippoResponse.then().body(equalTo("{\"path\": \"/path\"}"));
+        pippoResponse.then()
+                .header("method", "GET")
+                .body(equalTo("{\"path\": \"/path\"}"));
     }
 }

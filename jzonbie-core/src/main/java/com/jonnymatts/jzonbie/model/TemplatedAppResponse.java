@@ -8,10 +8,10 @@ public class TemplatedAppResponse extends AppResponse {
 
     @Override
     public String toString() {
-        return "AppResponse{" +
+        return "TemplatedAppResponse{" +
                 "statusCode=" + getStatusCode() +
                 ", headers=" + getHeaders() +
-                ", delay=" + getDelay() +
+                ", delay=" + getDelay().orElse(null) +
                 ", body=" + getBody() +
                 '}';
     }

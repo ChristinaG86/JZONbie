@@ -1,5 +1,6 @@
 package com.jonnymatts.jzonbie.pippo;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.jknack.handlebars.Handlebars;
 import com.github.jknack.handlebars.Template;
@@ -16,7 +17,6 @@ import com.jonnymatts.jzonbie.response.CurrentPrimingFileResponseFactory.FileRes
 import com.jonnymatts.jzonbie.response.ErrorResponse;
 import com.jonnymatts.jzonbie.response.PrimingNotFoundErrorResponse;
 import com.jonnymatts.jzonbie.response.Response;
-import com.jonnymatts.jzonbie.templating.JsonPathHelper;
 import com.jonnymatts.jzonbie.templating.TransformationContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,8 +25,10 @@ import ro.pippo.core.route.RouteContext;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 
 import static java.lang.String.format;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -43,18 +45,20 @@ public class PippoApplication extends Application {
     private final ObjectMapper objectMapper;
     private final String zombieHeaderName;
     private final List<JzonbieRoute> additionalRoutes;
+    private final Handlebars handlebars;
 
     public PippoApplication(JzonbieOptions options,
                             AppRequestHandler appRequestHandler,
                             ZombieRequestHandler zombieRequestHandler,
                             ObjectMapper objectMapper,
-                            List<JzonbieRoute> additionalRoutes) {
-
+                            List<JzonbieRoute> additionalRoutes,
+                            Handlebars handlebars) {
         this.appRequestHandler = appRequestHandler;
         this.zombieRequestHandler = zombieRequestHandler;
         this.objectMapper = objectMapper;
         this.zombieHeaderName = options.getZombieHeaderName();
         this.additionalRoutes = additionalRoutes;
+        this.handlebars = handlebars;
     }
 
     @Override
@@ -79,34 +83,19 @@ public class PippoApplication extends Application {
                 final FileResponse fileResponse = (FileResponse) response;
                 pippoResponse.contentType(APPLICATION_JSON);
                 pippoResponse.file(fileResponse.getFileName(), new ByteArrayInputStream(fileResponse.getContents().getBytes()));
+            } else if(response instanceof TemplatedAppResponse) {
+                final TransformationContext transformationContext = new TransformationContext(pippoRequest);
+                final Map<String, String> transformedHeaders = transformHeaders(transformationContext, response.getHeaders());
+                primeResponse(pippoResponse, response.getStatusCode(), transformedHeaders);
+                sleepIfNecessary(response);
+                final String bodyString = getBodyString(response.getBody());
+                final String transformedBodyString = transformResponseBody(transformationContext, bodyString);
+                send(routeContext, transformedBodyString);
             } else {
-                primeResponse(pippoResponse, response);
-
-                response.getDelay().ifPresent(d -> {
-                    try {
-                        Thread.sleep(d.toMillis());
-                    } catch (InterruptedException e) {
-                        throw new RuntimeException(e);
-                    }
-                });
-
-                final Object body = response.getBody();
-
-                if(body == null) {
-                    routeContext.getResponse().commit();
-                } else if(body instanceof LiteralBodyContent) {
-                    final String transformedBody = transformResponseBody(pippoRequest, ((LiteralBodyContent) body).getContent());
-                    routeContext.send(transformedBody);
-                } else {
-                    final Object o = (body instanceof BodyContent) ? ((BodyContent) body).getContent() : body;
-                    final String bodyString = objectMapper.writeValueAsString(o);
-                    if(response instanceof TemplatedAppResponse) {
-                        final String transformedBodyString = transformResponseBody(pippoRequest, bodyString);
-                        routeContext.send(transformedBodyString);
-                    } else {
-                        routeContext.send(bodyString);
-                    }
-                }
+                primeResponse(pippoResponse, response.getStatusCode(), response.getHeaders());
+                sleepIfNecessary(response);
+                final String bodyString = getBodyString(response.getBody());
+                send(routeContext, bodyString);
             }
         } catch (PrimingNotFoundException e) {
             LOGGER.error("Priming not found for request {}", e.getRequest());
@@ -120,19 +109,48 @@ public class PippoApplication extends Application {
         }
     }
 
-    private String transformResponseBody(PippoRequest pippoRequest, String bodyString) throws IOException {
-        final TransformationContext transformationContext = new TransformationContext(pippoRequest);
-        final Handlebars handlebars = new Handlebars();
-        handlebars.registerHelper("jsonPath", new JsonPathHelper());
+    private void send(RouteContext routeContext, String bodyString) {
+        if(bodyString ==  null) {
+            routeContext.getResponse().commit();
+        } else {
+            routeContext.send(bodyString);
+        }
+    }
+
+    private String getBodyString(Object body) throws JsonProcessingException {
+        if(body == null) return null;
+        if(body instanceof LiteralBodyContent) return ((LiteralBodyContent) body).getContent();
+        final Object o = (body instanceof BodyContent) ? ((BodyContent) body).getContent() : body;
+        return objectMapper.writeValueAsString(o);
+    }
+
+    private void sleepIfNecessary(Response response) {
+        response.getDelay().ifPresent(d -> {
+            try {
+                Thread.sleep(d.toMillis());
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    private Map<String, String> transformHeaders(TransformationContext transformationContext, Map<String, String> headers) throws IOException {
+        final Map<String, String> transformedHeaders = new HashMap<>();
+        for(Entry<String, String> header : headers.entrySet()) {
+            final Template template = handlebars.compileInline(header.getValue());
+            final String transformedValue = template.apply(transformationContext);
+            transformedHeaders.put(header.getKey(), transformedValue);
+        }
+        return transformedHeaders;
+    }
+
+    private String transformResponseBody(TransformationContext transformationContext, String bodyString) throws IOException {
         final Template template = handlebars.compileInline(bodyString);
         return template.apply(transformationContext);
     }
 
-    private void primeResponse(ro.pippo.core.Response response, Response r) {
-        response.status(r.getStatusCode());
-
-        final Map<String, String> headers = r.getHeaders();
-
+    private void primeResponse(ro.pippo.core.Response response, int statusCode, Map<String, String> headers) throws IOException {
+        response.status(statusCode);
         if(headers != null) {
             headers.forEach(response::header);
         }
